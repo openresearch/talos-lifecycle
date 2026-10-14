@@ -5,6 +5,7 @@ package versions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,11 +29,12 @@ const (
 	defaultTalosReleasesURL      = "https://api.github.com/repos/siderolabs/talos/releases"
 	defaultKubernetesReleasesURL = "https://api.github.com/repos/kubernetes/kubernetes/releases"
 
-	pollInterval  = 24 * time.Hour
-	retryInterval = 15 * time.Minute
-	fetchTimeout  = time.Minute
-	maxFeedBytes  = 16 << 20
-	maxFeedPages  = 10
+	pollInterval          = 24 * time.Hour
+	retryInterval         = 15 * time.Minute
+	baselineRetryInterval = time.Minute
+	fetchTimeout          = time.Minute
+	maxFeedBytes          = 16 << 20
+	maxFeedPages          = 10
 )
 
 type release struct {
@@ -72,12 +74,17 @@ func (p *Poller) Start(ctx context.Context) error {
 	for {
 		interval := pollInterval
 
-		if err := p.poll(ctx); err != nil {
+		switch err := p.poll(ctx); {
+		case errors.Is(err, errBaselineUnknown):
+			log.Info("waiting for the cluster's versions before publishing")
+
+			interval = baselineRetryInterval
+		case err != nil:
 			log.Error(err, "poll failed")
 			metricPollErrors.Inc()
 
 			interval = retryInterval
-		} else {
+		default:
 			metricPollLastSuccess.SetToCurrentTime()
 		}
 
@@ -112,7 +119,9 @@ func (p *Poller) poll(ctx context.Context) error {
 	return nil
 }
 
-const maxUnfilteredVersions = 10
+// errBaselineUnknown: a list not filtered against the cluster's version would
+// offer the wrong next step, so nothing is published until it is known.
+var errBaselineUnknown = errors.New("cluster versions not observed yet")
 
 func (p *Poller) publish(
 	ctx context.Context,
@@ -138,30 +147,24 @@ func (p *Poller) publish(
 			return fmt.Errorf("get upgrade plan: %w", err)
 		}
 
+		talos, kubernetes := plan.Status.LowestTalosVersion(), plan.Status.Kubernetes.CurrentVersion
+		if talos == "" || kubernetes == "" {
+			return errBaselineUnknown
+		}
+
 		if talosOK {
-			lowest := plan.Status.LowestTalosVersion()
-			plan.Status.AvailableTalosVersions = capUnfiltered(newerThan(talosVersions, lowest), lowest)
+			plan.Status.AvailableTalosVersions = newerThan(talosVersions, talos)
 		}
 
 		if kubernetesOK {
-			plan.Status.AvailableKubernetesVersions = capUnfiltered(
-				newerThan(kubernetesVersions, plan.Status.Kubernetes.CurrentVersion),
-				plan.Status.Kubernetes.CurrentVersion)
+			plan.Status.AvailableKubernetesVersions = newerThan(kubernetesVersions, kubernetes)
 		}
 
 		return p.Client.Status().Update(ctx, &plan)
 	})
 }
 
-func capUnfiltered(versions []string, current string) []string {
-	if current != "" || len(versions) <= maxUnfilteredVersions {
-		return versions
-	}
-
-	return versions[len(versions)-maxUnfilteredVersions:]
-}
-
-// a GitHub page holds only 30 releases
+// fetchStableVersions follows rel="next": a GitHub page holds only 30 releases.
 func fetchStableVersions(ctx context.Context, url string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()

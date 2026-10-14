@@ -3,10 +3,18 @@ package versions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	upgradev1alpha1 "github.com/openresearch/talos-lifecycle/api/v1alpha1"
 )
 
 func TestFetchStableVersions(t *testing.T) {
@@ -86,22 +94,53 @@ func TestNewerThan(t *testing.T) {
 	}
 }
 
-func TestCapUnfiltered(t *testing.T) {
-	versions := make([]string, 0, 30)
-	for i := 0; i < 30; i++ {
-		versions = append(versions, fmt.Sprintf("v1.%d.0", i))
+func TestPublishWaitsForTheClusterVersions(t *testing.T) {
+	ctx := context.Background()
+
+	scheme := runtime.NewScheme()
+	if err := upgradev1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
 	}
 
-	capped := capUnfiltered(versions, "")
-	if len(capped) != maxUnfilteredVersions {
-		t.Fatalf("capUnfiltered length = %d, want %d", len(capped), maxUnfilteredVersions)
+	plan := &upgradev1alpha1.UpgradePlan{ObjectMeta: metav1.ObjectMeta{Name: upgradev1alpha1.UpgradePlanName}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(plan).WithStatusSubresource(plan).Build()
+	p := &Poller{Client: c}
+
+	talos := []string{"v1.12.3", "v1.12.12", "v1.13.0", "v1.13.11", "v1.14.0", "v1.14.1", "v1.14.2"}
+	kubernetes := []string{"v1.31.0", "v1.31.14", "v1.32.0"}
+
+	if err := p.publish(ctx, talos, true, kubernetes, true); !errors.Is(err, errBaselineUnknown) {
+		t.Fatalf("publish before any node version = %v, want errBaselineUnknown", err)
 	}
 
-	if capped[len(capped)-1] != "v1.29.0" {
-		t.Errorf("newest capped version = %s, want v1.29.0", capped[len(capped)-1])
+	if err := c.Get(ctx, client.ObjectKeyFromObject(plan), plan); err != nil {
+		t.Fatal(err)
 	}
 
-	if got := capUnfiltered(versions, "v1.0.0"); len(got) != len(versions) {
-		t.Errorf("capUnfiltered with baseline trimmed the list to %d entries", len(got))
+	if len(plan.Status.AvailableTalosVersions) != 0 {
+		t.Fatalf("published %v without a baseline", plan.Status.AvailableTalosVersions)
+	}
+
+	plan.Status.Nodes = []upgradev1alpha1.NodeStatus{{Name: "cp-0", CurrentVersion: "v1.12.3"}}
+	plan.Status.Kubernetes.CurrentVersion = "v1.31.0"
+
+	if err := c.Status().Update(ctx, plan); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.publish(ctx, talos, true, kubernetes, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Get(ctx, client.ObjectKeyFromObject(plan), plan); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := fmt.Sprint(plan.Status.AvailableTalosVersions); got != fmt.Sprint(talos[1:]) {
+		t.Errorf("talos = %s, want %v", got, talos[1:])
+	}
+
+	if got := fmt.Sprint(plan.Status.AvailableKubernetesVersions); got != fmt.Sprint(kubernetes[1:]) {
+		t.Errorf("kubernetes = %s, want %v", got, kubernetes[1:])
 	}
 }
