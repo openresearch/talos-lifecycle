@@ -47,6 +47,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes \
+          prerelease=""
+          case "${GITHUB_REF_NAME}" in *-*) prerelease=--prerelease ;; esac
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes $prerelease \
             dist/install.yaml dist/config-controller.yaml \
             "dist/talos-lifecycle-${GITHUB_REF_NAME#v}.tgz"
