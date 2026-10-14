@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Unit and envtest tests
+        run: make test
+      - name: Generated code and manifests are committed
+        run: git diff --exit-code
+      - name: Lint
+        run: make lint
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.22.0
+      - name: Lint the chart
+        run: make chart-lint
+      - name: Chart renders the same objects as the Kustomize install
+        run: make chart-check

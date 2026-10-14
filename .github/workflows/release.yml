@@ -1,0 +1,52 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # GitHub release
+  packages: write # image and chart on ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # goreleaser refuses a shallow clone
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image (amd64 and arm64)
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: v2.15.4
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.22.0
+      - name: Install manifests and chart
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          make build-installer build-installer-config IMG="ghcr.io/openresearch/talos-lifecycle:${GITHUB_REF_NAME}"
+          echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          make chart-push VERSION="${GITHUB_REF_NAME}"
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes \
+            dist/install.yaml dist/config-controller.yaml \
+            "dist/talos-lifecycle-${GITHUB_REF_NAME#v}.tgz"

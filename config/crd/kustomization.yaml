@@ -1,0 +1,8 @@
+resources:
+- bases/talos.openresearch.com_upgradeplans.yaml
+- bases/talos.openresearch.com_machineconfigplans.yaml
+# +kubebuilder:scaffold:crdkustomizeresource
+
+patches:
+# +kubebuilder:scaffold:crdkustomizewebhookpatch
+

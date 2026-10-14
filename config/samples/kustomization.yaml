@@ -1,0 +1,4 @@
+resources:
+- talos_v1alpha1_upgradeplan.yaml
+- talos_v1alpha1_machineconfigplan.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

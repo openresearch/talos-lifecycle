@@ -1,0 +1,98 @@
+groups:
+  - name: talos-lifecycle
+    rules:
+      - alert: TalosUpgradePlanFrozen
+        expr: talos_lifecycle_plan_frozen == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Upgrade plan is frozen by a failed upgrade"
+          description: >-
+            A Talos or Kubernetes upgrade failed and blocks all further
+            upgrades. Inspect `kubectl describe upgradeplan cluster`,
+            resolve the failure, then acknowledge with the
+            talos.openresearch.com/unfreeze annotation.
+
+      - alert: TalosUpgradePlanBlocked
+        expr: talos_lifecycle_plan_blocked == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Upgrade plan waits on an operator: {{ $labels.reason }}"
+          description: >-
+            The targets cannot be reached as set (incompatible Talos and
+            Kubernetes versions, an unsupported path, a downgrade, a
+            version newer than this controller build, or an upgrade the
+            node refused, such as an image that does not exist). Status message on
+            `kubectl get upgradeplan cluster -o yaml` says what to change.
+
+      - alert: TalosUpgradeFailed
+        expr: increase(talos_lifecycle_upgrades_total{result="failure"}[1h]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "An upgrade failed within the last hour"
+          description: >-
+            Check events on the UpgradePlan for the failure reason:
+            `kubectl describe upgradeplan cluster`.
+
+      - alert: TalosUpgradeStuck
+        expr: sum(talos_lifecycle_nodes{phase=~"Upgrading|Verifying|HealthChecking"}) > 0
+        for: 90m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A node upgrade has been in flight for over 90 minutes"
+          description: >-
+            The per-phase timeouts should have fired long ago; the
+            controller may be crash-looping or wedged.
+
+      - alert: TalosVersionPollStale
+        expr: >-
+          time() - talos_lifecycle_version_poll_last_success_timestamp_seconds
+          > 172800
+        labels:
+          severity: warning
+        annotations:
+          summary: "Upstream version feeds not polled successfully for 48h"
+          description: >-
+            New releases are not being discovered. Check controller logs
+            and reachability of the release feed endpoints.
+
+      - alert: TalosEtcdSnapshotFailing
+        expr: increase(talos_lifecycle_etcd_snapshot_failures_total[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "etcd snapshots are failing"
+          description: >-
+            Snapshot failures block control-plane and Kubernetes upgrades
+            (strict policy). Check S3 credentials/connectivity and events
+            on the UpgradePlan.
+
+      - alert: TalosConfigPlanFrozen
+        expr: talos_lifecycle_config_plan_frozen == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Machine config plan is frozen"
+          description: >-
+            A config apply failed or the tree does not render. Inspect
+            `kubectl describe machineconfigplan cluster`, fix the cause,
+            then acknowledge with the talos.openresearch.com/unfreeze
+            annotation if a node failed.
+
+      - alert: TalosConfigRebootOnlySkipped
+        expr: talos_lifecycle_config_skipped_nodes > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Machine config tree changes fields that need a reboot"
+          description: >-
+            Those fields keep the node's value and Git no longer describes
+            them. See status.nodes[].skipped on the MachineConfigPlan.
+

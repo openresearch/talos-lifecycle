@@ -1,0 +1,19 @@
+{{ include "otc.fullname" . }} {{ .Chart.AppVersion }} is installed in {{ .Release.Namespace }}.
+{{- if .Values.upgrade.enabled }}
+
+Upgrade controller: create the UpgradePlan named "cluster" (or let it create an
+empty one) and set spec.channel, or spec.talosVersion / spec.kubernetesVersion.
+Etcd snapshots before control-plane steps read Secret
+{{ .Values.upgrade.etcdSnapshotSecret }}, or set spec.etcdSnapshotPolicy: disabled.
+{{- end }}
+{{- if .Values.config.enabled }}
+
+Config controller: create Secret {{ .Values.config.gitSecretName }} (keys identity,
+known_hosts) and a MachineConfigPlan named "cluster". It starts in DiffOnly;
+nothing is applied until spec.mode is Reconcile.
+{{- end }}
+
+Both controllers hold os:admin Talos credentials, which amount to cluster-admin.
+Treat anyone who can create pods or read Secrets in {{ .Release.Namespace }} as
+cluster-admin, and label the namespace for Pod Security:
+  kubectl label namespace {{ .Release.Namespace }} pod-security.kubernetes.io/enforce=restricted

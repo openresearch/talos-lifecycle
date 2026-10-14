@@ -1,0 +1,223 @@
+{{- if .Values.config.enabled }}
+{{- $fullname := include "otc.fullname" . }}
+{{- $sa := printf "%s-config-manager" $fullname }}
+{{- $ns := .Release.Namespace }}
+apiVersion: talos.dev/v1alpha1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa }}-talos-secrets
+  namespace: {{ $ns }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+spec:
+  roles:
+  - os:admin
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-config-manager-role
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - talos.openresearch.com
+  resources:
+  - machineconfigplans
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+- apiGroups:
+  - talos.openresearch.com
+  resources:
+  - machineconfigplans/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - talos.openresearch.com
+  resources:
+  - upgradeplans
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullname }}-config-manager-rolebinding
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}-config-manager-role
+subjects:
+- kind: ServiceAccount
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-config-secrets-role
+  namespace: {{ $ns }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - {{ .Values.config.gitSecretName }}
+  resources:
+  - secrets
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-config-secrets-rolebinding
+  namespace: {{ $ns }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}-config-secrets-role
+subjects:
+- kind: ServiceAccount
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-config-leader-election-role
+  namespace: {{ $ns }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-config-leader-election-rolebinding
+  namespace: {{ $ns }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}-config-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+{{- if .Values.metrics.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullname }}-config-metrics-auth-rolebinding
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}-metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+---
+{{ include "otc.metricsService" (dict "root" . "name" (printf "%s-config-controller-metrics-service" $fullname) "selector" (printf "%s\napp.kubernetes.io/component: config-controller" (include "otc.selectorLabels" .))) }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-config-controller
+  namespace: {{ $ns }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "otc.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: config-controller
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        {{- include "otc.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: config-controller
+    spec:
+      affinity:
+        {{- include "otc.affinity" . | nindent 8 }}
+      containers:
+      - args:
+        - --controllers=config
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        {{- if .Values.metrics.enabled }}
+        - --metrics-bind-address=:8443
+        {{- end }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          {{- toYaml .Values.config.resources | nindent 10 }}
+        {{- include "otc.containerCommon" . | nindent 8 }}
+      {{- include "otc.podCommon" (dict "root" . "sa" $sa "secret" (printf "%s-talos-secrets" $sa)) | nindent 6 }}
+{{- end }}

@@ -1,0 +1,70 @@
+# Talos must allow os:admin from the release namespace; see README.md.
+
+image:
+  repository: ghcr.io/openresearch/talos-lifecycle
+  # defaults to the chart's appVersion
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+crds:
+  enabled: true
+  # keep the CRDs on uninstall: deleting one deletes the plan
+  keep: true
+
+# keeps the descheduler from evicting a controller mid-operation
+priorityClassName: system-cluster-critical
+
+nodeSelector: {}
+tolerations: []
+# empty: the two controllers never share a node
+affinity: {}
+
+upgrade:
+  enabled: true
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  # installer image, without tag, for nodes not installed from an Image Factory
+  # image; spec.installerImageBase overrides it for all nodes
+  installerImageBase: factory.talos.dev/installer/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba
+  # upstream release feeds (GitHub releases API format)
+  releaseFeeds:
+    talos: https://api.github.com/repos/siderolabs/talos/releases
+    kubernetes: https://api.github.com/repos/kubernetes/kubernetes/releases
+  # keys endpoint, bucket, accessKey, secretKey, region, prefix; not created by the chart
+  etcdSnapshotSecret: talos-lifecycle-s3
+
+config:
+  enabled: true
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  # the only Secret it may read (keys identity, known_hosts); not created by the chart
+  gitSecretName: talos-config-git
+
+metrics:
+  # HTTPS on :8443, authenticated
+  enabled: true
+
+serviceMonitor:
+  # requires the Prometheus Operator CRDs
+  enabled: false
+
+prometheusRule:
+  enabled: false
+
+# admin, editor and viewer ClusterRoles for UpgradePlan, to bind to people
+planRoles:
+  enabled: true

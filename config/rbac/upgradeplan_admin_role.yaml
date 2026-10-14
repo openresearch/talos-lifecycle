@@ -1,0 +1,21 @@
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: talos-lifecycle
+    app.kubernetes.io/managed-by: kustomize
+  name: upgradeplan-admin-role
+rules:
+- apiGroups:
+  - talos.openresearch.com
+  resources:
+  - upgradeplans
+  verbs:
+  - '*'
+- apiGroups:
+  - talos.openresearch.com
+  resources:
+  - upgradeplans/status
+  verbs:
+  - get

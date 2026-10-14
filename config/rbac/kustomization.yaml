@@ -1,0 +1,14 @@
+resources:
+- service_account.yaml
+- role.yaml
+- role_binding.yaml
+- role_binding_namespaced.yaml
+- leader_election_role.yaml
+- leader_election_role_binding.yaml
+- metrics_auth_role.yaml
+- metrics_auth_role_binding.yaml
+- metrics_reader_role.yaml
+- upgradeplan_admin_role.yaml
+- upgradeplan_editor_role.yaml
+- upgradeplan_viewer_role.yaml
+

@@ -1,0 +1,17 @@
+apiVersion: talos.openresearch.com/v1alpha1
+kind: UpgradePlan
+metadata:
+  labels:
+    app.kubernetes.io/name: talos-lifecycle
+    app.kubernetes.io/managed-by: kustomize
+  name: cluster
+spec:
+  # manual: setting a version approves the upgrade; latest: the controller sets them
+  channel: manual
+  # an empty version leaves that component alone
+  talosVersion: v1.10.2
+  kubernetesVersion: v1.32.3
+  cooldownMinutes: 60
+  # window:
+  #   start: "20:00"
+  #   end: "05:00"

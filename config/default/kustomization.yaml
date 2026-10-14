@@ -1,0 +1,13 @@
+namespace: talos-lifecycle-system
+namePrefix: talos-lifecycle-
+
+resources:
+- ../crd
+- ../rbac
+- ../manager
+- metrics_service.yaml
+
+patches:
+- path: manager_metrics_patch.yaml
+  target:
+    kind: Deployment

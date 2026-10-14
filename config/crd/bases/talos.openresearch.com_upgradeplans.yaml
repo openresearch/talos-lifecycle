@@ -1,0 +1,254 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.1
+  name: upgradeplans.talos.openresearch.com
+spec:
+  group: talos.openresearch.com
+  names:
+    kind: UpgradePlan
+    listKind: UpgradePlanList
+    plural: upgradeplans
+    singular: upgradeplan
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.reason
+      name: Reason
+      type: string
+    - jsonPath: .spec.talosVersion
+      name: Talos
+      type: string
+    - jsonPath: .spec.kubernetesVersion
+      name: Kubernetes
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          UpgradePlan is the cluster-scoped singleton "cluster": desired Talos and
+          Kubernetes versions, and upgrade progress.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              autoRollback:
+                default: true
+                description: |-
+                  Boot a node's previous Talos image when its upgrade fails. The plan freezes
+                  either way. Kubernetes is never rolled back.
+                type: boolean
+              channel:
+                default: manual
+                description: |-
+                  "manual": an operator sets the versions, and setting one approves the upgrade.
+                  "latest": the controller sets them, one stable release at a time.
+                enum:
+                - manual
+                - latest
+                type: string
+              cooldownMinutes:
+                default: 60
+                description: Pause after each successful step. 0 disables it.
+                format: int64
+                minimum: 0
+                type: integer
+              etcdSnapshotPolicy:
+                default: required
+                description: |-
+                  "required": wait for an etcd snapshot in S3 before every control-plane and
+                  Kubernetes step. "disabled": skip it.
+                enum:
+                - required
+                - disabled
+                type: string
+              installerImageBase:
+                description: |-
+                  Installer image without tag, for every node. Empty: the node's own Image
+                  Factory schematic, else the controller's default.
+                type: string
+              kubernetesVersion:
+                description: Kubernetes version, e.g. "v1.32.3". Empty leaves Kubernetes
+                  alone.
+                pattern: ^v\d+\.\d+\.\d+$
+                type: string
+              talosVersion:
+                description: Talos version for every node, e.g. "v1.10.2". Empty leaves
+                  Talos alone.
+                pattern: ^v\d+\.\d+\.\d+$
+                type: string
+              timeouts:
+                description: Per-phase timeouts. Too short fails, and may roll back,
+                  a healthy upgrade.
+                properties:
+                  healthCheckMinutes:
+                    description: Cluster health after an upgrade (default 15).
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  rollbackMinutes:
+                    description: Rolled-back node to Ready (default 20).
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  upgradeMinutes:
+                    description: Install and reboot of a node (default 30).
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  verifyMinutes:
+                    description: Rebooted node to Ready (default 15).
+                    format: int64
+                    minimum: 1
+                    type: integer
+                type: object
+              window:
+                description: 'When a step may start. Unset: any time.'
+                properties:
+                  end:
+                    pattern: ^([01]\d|2[0-3]):[0-5]\d$
+                    type: string
+                  start:
+                    pattern: ^([01]\d|2[0-3]):[0-5]\d$
+                    type: string
+                required:
+                - end
+                - start
+                type: object
+            type: object
+          status:
+            properties:
+              availableKubernetesVersions:
+                description: Stable Kubernetes releases newer than the cluster's.
+                items:
+                  type: string
+                type: array
+              availableTalosVersions:
+                description: Stable Talos releases newer than the lowest node version.
+                items:
+                  type: string
+                type: array
+              kubernetes:
+                properties:
+                  currentVersion:
+                    description: Lowest kubelet version in the cluster.
+                    type: string
+                  lastTransition:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  phase:
+                    type: string
+                  startedAt:
+                    format: date-time
+                    type: string
+                  targetVersion:
+                    type: string
+                type: object
+              lastCompletedAt:
+                description: Last successful node or Kubernetes step; the cooldown
+                  counts from here.
+                format: date-time
+                type: string
+              lastEtcdSnapshot:
+                properties:
+                  name:
+                    description: Object key in the bucket.
+                    type: string
+                  sizeBytes:
+                    format: int64
+                    type: integer
+                  time:
+                    format: date-time
+                    type: string
+                required:
+                - name
+                - time
+                type: object
+              message:
+                type: string
+              nodes:
+                items:
+                  properties:
+                    address:
+                      type: string
+                    currentVersion:
+                      description: Talos version the node last reported.
+                      type: string
+                    lastTransition:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    phase:
+                      type: string
+                    resends:
+                      description: Upgrades sent again because the node never started
+                        the previous one.
+                      format: int32
+                      type: integer
+                    role:
+                      enum:
+                      - control-plane
+                      - worker
+                      type: string
+                    rollbackIssued:
+                      description: Set before the rollback is sent, so a restart never
+                        sends a second one.
+                      type: boolean
+                    selfEvictionRequested:
+                      description: |-
+                        The controller evicted its own pod from this node; a new pod landing here
+                        proceeds instead of evicting again.
+                      type: boolean
+                    startedAt:
+                      format: date-time
+                      type: string
+                    targetVersion:
+                      description: Version the node was sent; it is judged against
+                        this, not the current spec.
+                      type: string
+                  required:
+                  - address
+                  - name
+                  - role
+                  type: object
+                type: array
+              phase:
+                type: string
+              reason:
+                description: Machine-readable cause, e.g. "CoolingDown".
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

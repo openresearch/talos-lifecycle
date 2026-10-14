@@ -1,0 +1,19 @@
+---
+# DiffOnly applies nothing; switch to Reconcile once no node differs.
+apiVersion: talos.openresearch.com/v1alpha1
+kind: MachineConfigPlan
+metadata:
+  name: cluster
+  labels:
+    app.kubernetes.io/name: talos-lifecycle
+spec:
+  mode: DiffOnly
+  source:
+    git:
+      url: ssh://git@git.example.com/infra/talos-config.git
+      ref: main
+      path: clusters/prod
+      secretRef:
+        name: talos-config-git
+        namespace: talos-lifecycle-system
+  cooldownMinutes: 5

@@ -1,0 +1,103 @@
+{{- $fullname := include "otc.fullname" . }}
+{{- if .Values.crds.enabled }}
+{{- range $path, $_ := .Files.Glob "files/crds/*.yaml" }}
+{{- $crd := $.Files.Get $path | fromYaml }}
+{{- if $.Values.crds.keep }}
+{{- $_ := set $crd.metadata "annotations" (merge (default dict $crd.metadata.annotations) (dict "helm.sh/resource-policy" "keep")) }}
+{{- end }}
+---
+{{ toYaml $crd }}
+{{- end }}
+{{- end }}
+{{- if and .Values.metrics.enabled (or .Values.upgrade.enabled .Values.config.enabled) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-metrics-auth-role
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-metrics-reader
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+{{- end }}
+{{- if .Values.planRoles.enabled }}
+{{- range $role, $verbs := dict "admin" (list "*") "editor" (list "create" "delete" "get" "list" "patch" "update" "watch") "viewer" (list "get" "list" "watch") }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-upgradeplan-{{ $role }}-role
+  labels:
+    {{- include "otc.labels" $ | nindent 4 }}
+rules:
+- apiGroups:
+  - talos.openresearch.com
+  resources:
+  - upgradeplans
+  verbs:
+  {{- toYaml $verbs | nindent 2 }}
+- apiGroups:
+  - talos.openresearch.com
+  resources:
+  - upgradeplans/status
+  verbs:
+  - get
+{{- end }}
+{{- end }}
+{{- if and .Values.serviceMonitor.enabled .Values.metrics.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+spec:
+  endpoints:
+  - path: /metrics
+    port: https
+    scheme: https
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    # self-signed certificate; the bearer token is still checked
+    tlsConfig:
+      insecureSkipVerify: true
+  selector:
+    matchLabels:
+      {{- include "otc.selectorLabels" . | nindent 6 }}
+{{- end }}
+{{- if .Values.prometheusRule.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $fullname }}-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otc.labels" . | nindent 4 }}
+spec:
+  {{- .Files.Get "files/prometheus-groups.yaml" | nindent 2 }}
+{{- end }}

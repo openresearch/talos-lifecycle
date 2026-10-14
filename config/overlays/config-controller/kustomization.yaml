@@ -1,0 +1,19 @@
+# The config controller: the same image with --controllers=config, applied on
+# top of config/default.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: talos-lifecycle-system
+namePrefix: talos-lifecycle-
+
+resources:
+- serviceaccount.yaml
+- role.yaml
+- role_binding.yaml
+- deployment.yaml
+- metrics_service.yaml
+
+images:
+- name: controller
+  newName: ghcr.io/openresearch/talos-lifecycle
+  newTag: latest

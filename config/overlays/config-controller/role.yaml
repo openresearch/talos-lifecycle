@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: config-manager-role
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [talos.openresearch.com]
+    resources: [machineconfigplans]
+    verbs: [get, list, watch, patch]
+  - apiGroups: [talos.openresearch.com]
+    resources: [machineconfigplans/status]
+    verbs: [get, update, patch]
+  - apiGroups: [talos.openresearch.com]
+    resources: [upgradeplans]
+    verbs: [get]
+---
+# only the Git Secret, by name; rename it here if spec.source.git.secretRef differs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: config-secrets-role
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [talos-config-git]
+    verbs: [get]

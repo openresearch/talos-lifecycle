@@ -1,0 +1,245 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.1
+  name: machineconfigplans.talos.openresearch.com
+spec:
+  group: talos.openresearch.com
+  names:
+    kind: MachineConfigPlan
+    listKind: MachineConfigPlanList
+    plural: machineconfigplans
+    shortNames:
+    - mcp
+    singular: machineconfigplan
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.reason
+      name: Reason
+      type: string
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .status.appliedRevision
+      name: Revision
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          MachineConfigPlan is the cluster-scoped singleton "cluster" that rolls Talos
+          machine config out from Git.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              cooldownMinutes:
+                default: 5
+                description: Pause between nodes.
+                format: int64
+                minimum: 0
+                type: integer
+              mode:
+                default: DiffOnly
+                description: DiffOnly (default) reports and applies nothing; Reconcile
+                  applies.
+                enum:
+                - Reconcile
+                - DiffOnly
+                type: string
+              paused:
+                description: Start no new node; a node in flight finishes.
+                type: boolean
+              source:
+                description: |-
+                  ConfigSource holds base/, roles/ and nodes/ of Talos patches, applied onto each
+                  node's own config. It holds no secrets.
+                properties:
+                  git:
+                    properties:
+                      path:
+                        description: Directory holding base/, roles/ and nodes/.
+                        type: string
+                      ref:
+                        default: main
+                        type: string
+                      secretRef:
+                        description: Secret with `identity` (a read-only deploy key)
+                          and `known_hosts`.
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      url:
+                        description: ssh:// or scp-style.
+                        type: string
+                    required:
+                    - secretRef
+                    - url
+                    type: object
+                  path:
+                    description: A local directory instead of Git; for `make run`
+                      and tests.
+                    type: string
+                type: object
+              verify:
+                description: |-
+                  ConfigVerifyTimeouts are in seconds. tryTimeoutSeconds must exceed the others
+                  summed plus a minute; the controller refuses a plan that does not.
+                properties:
+                  healthTimeoutSeconds:
+                    default: 300
+                    description: Cluster health check after the soak.
+                    format: int64
+                    minimum: 10
+                    type: integer
+                  probeTimeoutSeconds:
+                    default: 60
+                    description: Wait for the node to run the tried config.
+                    format: int64
+                    minimum: 10
+                    type: integer
+                  soakSeconds:
+                    default: 120
+                    description: How long the node runs the tried config before the
+                      health check.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  tryTimeoutSeconds:
+                    default: 600
+                    description: When the node reverts on its own.
+                    format: int64
+                    minimum: 60
+                    type: integer
+                type: object
+              window:
+                description: When a node may start.
+                properties:
+                  end:
+                    pattern: ^([01]\d|2[0-3]):[0-5]\d$
+                    type: string
+                  start:
+                    pattern: ^([01]\d|2[0-3]):[0-5]\d$
+                    type: string
+                required:
+                - end
+                - start
+                type: object
+            type: object
+          status:
+            properties:
+              appliedRevision:
+                description: Revision every node matches.
+                type: string
+              message:
+                type: string
+              nodes:
+                items:
+                  properties:
+                    address:
+                      type: string
+                    appliedRevision:
+                      description: Source revision this node last matched.
+                      type: string
+                    completedAt:
+                      description: Last commit; the cooldown counts from here.
+                      format: date-time
+                      type: string
+                    desiredHash:
+                      description: Hash of the rendered config.
+                      type: string
+                    diff:
+                      description: Redacted diff while Pending; changed secrets show
+                        as hashes.
+                      type: string
+                    lastTransition:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    observedHash:
+                      description: Hash of the persistent slot.
+                      type: string
+                    phase:
+                      type: string
+                    revertReason:
+                      type: string
+                    role:
+                      enum:
+                      - control-plane
+                      - worker
+                      type: string
+                    skipped:
+                      description: |-
+                        Fields Talos reads only at boot; they keep the node's value, since a hot
+                        apply cannot verify them.
+                      items:
+                        type: string
+                      type: array
+                    triedHash:
+                      description: Hash of what TRY sent; the commit sends the same
+                        bytes.
+                      type: string
+                    tryDeadline:
+                      description: When the node reverts on its own.
+                      format: date-time
+                      type: string
+                    tryIssuedAt:
+                      format: date-time
+                      type: string
+                    warnings:
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - address
+                  - name
+                  - role
+                  type: object
+                type: array
+              phase:
+                type: string
+              reason:
+                type: string
+              sourceCommit:
+                type: string
+              sourceRevision:
+                description: Content hash of the tree.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,70 @@
+version: 2
+
+project_name: talos-lifecycle
+
+# not dist/: `--clean` would wipe the install manifests there
+dist: goreleaser-dist
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/
+    binary: manager
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+source:
+  enabled: false
+
+release:
+  disable: true
+
+dockers:
+  # one image per architecture, joined by docker_manifests below
+  - image_templates:
+      - "ghcr.io/openresearch/talos-lifecycle:{{ .Tag }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Tag }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.source=https://github.com/openresearch/talos-lifecycle"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+  - image_templates:
+      - "ghcr.io/openresearch/talos-lifecycle:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Tag }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.source=https://github.com/openresearch/talos-lifecycle"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+
+docker_manifests:
+  - name_template: "ghcr.io/openresearch/talos-lifecycle:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/openresearch/talos-lifecycle:{{ .Tag }}-amd64"
+      - "ghcr.io/openresearch/talos-lifecycle:{{ .Tag }}-arm64"
+  - name_template: "ghcr.io/openresearch/talos-lifecycle:latest"
+    skip_push: auto
+    image_templates:
+      - "ghcr.io/openresearch/talos-lifecycle:{{ .Tag }}-amd64"
+      - "ghcr.io/openresearch/talos-lifecycle:{{ .Tag }}-arm64"
+
+changelog:
+  disable: true

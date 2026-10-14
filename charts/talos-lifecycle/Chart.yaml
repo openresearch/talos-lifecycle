@@ -1,0 +1,16 @@
+apiVersion: v2
+name: talos-lifecycle
+description: >-
+  Upgrades Talos and Kubernetes node by node, and rolls out Talos machine
+  config from Git with try-verify-commit. Two controllers, one image.
+type: application
+# both set from the release tag by `make chart-package`
+version: 0.0.0
+appVersion: v0.0.0
+home: https://github.com/openresearch/talos-lifecycle
+keywords:
+  - talos
+  - kubernetes
+  - upgrade
+  - machine-config
+  - gitops

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-controller-metrics-service
+  labels:
+    app.kubernetes.io/name: talos-lifecycle
+    app.kubernetes.io/component: config-controller
+spec:
+  ports:
+    - name: https
+      port: 8443
+      protocol: TCP
+      targetPort: 8443
+  selector:
+    app.kubernetes.io/name: talos-lifecycle
+    app.kubernetes.io/component: config-controller
