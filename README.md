@@ -190,6 +190,13 @@ image to `ghcr.io/openresearch/talos-lifecycle`, the chart goes to
 dependency bump of `github.com/siderolabs/*` and a rebuild: the supported
 upgrade paths are compiled in.
 
+## Design and testing
+
+[docs/architecture.md](docs/architecture.md) covers how both controllers work
+and why the config controller applies with Talos TRY mode.
+[docs/testing.md](docs/testing.md) covers how they are tested, in this
+repository and on a test cluster.
+
 ## License
 
 Copyright OpenResearch GmbH. Licensed under the Apache License, Version 2.0;
