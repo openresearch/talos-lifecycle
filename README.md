@@ -190,6 +190,12 @@ image to `ghcr.io/openresearch/talos-lifecycle`, the chart goes to
 dependency bump of `github.com/siderolabs/*` and a rebuild: the supported
 upgrade paths are compiled in.
 
+## Maintainers
+
+This project is maintained by OpenResearch GmbH. We use AI-assisted
+engineering tools to accelerate development; all code is reviewed, tested and
+verified by our engineering team for security and correctness.
+
 ## License
 
 Copyright OpenResearch GmbH. Licensed under the Apache License, Version 2.0;
