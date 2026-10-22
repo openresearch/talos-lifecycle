@@ -97,8 +97,9 @@ spec:
                 pattern: ^v\d+\.\d+\.\d+$
                 type: string
               talosVersion:
-                description: Talos version for every node, e.g. "v1.10.2". Empty leaves
-                  Talos alone.
+                description: |-
+                  Minimum Talos version for every node, e.g. "v1.10.2". Nodes already above
+                  it are left alone, never downgraded. Empty leaves Talos alone.
                 pattern: ^v\d+\.\d+\.\d+$
                 type: string
               timeouts:
