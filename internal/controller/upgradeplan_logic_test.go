@@ -376,13 +376,23 @@ func TestMinorGap(t *testing.T) {
 	}
 }
 
-func TestHighestTalosVersion(t *testing.T) {
-	plan := &upgradev1alpha1.UpgradePlan{Status: upgradev1alpha1.UpgradePlanStatus{Nodes: []upgradev1alpha1.NodeStatus{
-		{CurrentVersion: "v1.13.10"}, {CurrentVersion: "v1.14.1"}, {CurrentVersion: ""},
-	}}}
+func TestNextTalosNodeSkipsNodesAboveTarget(t *testing.T) {
+	plan := &upgradev1alpha1.UpgradePlan{
+		Spec: upgradev1alpha1.UpgradePlanSpec{TalosVersion: "v1.13.12"},
+		Status: upgradev1alpha1.UpgradePlanStatus{Nodes: []upgradev1alpha1.NodeStatus{
+			{Name: "manual-0", CurrentVersion: "v1.14.4", Phase: upgradev1alpha1.NodePhasePending},
+			{Name: testWorkerName, CurrentVersion: "v1.13.5", Phase: upgradev1alpha1.NodePhasePending},
+			{Name: "manual-1", CurrentVersion: "v1.14.4", Phase: upgradev1alpha1.NodePhasePending},
+		}},
+	}
 
-	if got := highestTalosVersion(plan); got != "v1.14.1" {
-		t.Errorf("highestTalosVersion = %q, want v1.14.1", got)
+	if next := nextTalosNode(plan); next == nil || next.Name != testWorkerName {
+		t.Fatalf("nextTalosNode = %v, want worker-0", next)
+	}
+
+	plan.Status.Nodes[1].CurrentVersion = "v1.13.12"
+	if next := nextTalosNode(plan); next != nil {
+		t.Errorf("nextTalosNode = %s, want nil once only nodes above the target remain", next.Name)
 	}
 }
 

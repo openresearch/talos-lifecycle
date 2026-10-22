@@ -56,7 +56,6 @@ const (
 var blockedReasons = map[string]bool{
 	reasonUnsupportedTalos:      true,
 	reasonUnsupportedKubernetes: true,
-	reasonTalosDowngrade:        true,
 	reasonIncompatibleVersions:  true,
 	reasonUpgradeRefused:        true,
 }
@@ -71,7 +70,6 @@ const (
 	reasonEtcdSnapshot          = "WaitingForEtcdSnapshot"
 	reasonUnsupportedTalos      = "UnsupportedTalosTarget"
 	reasonUnsupportedKubernetes = "UnsupportedKubernetesPath"
-	reasonTalosDowngrade        = "DowngradeNotSupported"
 	reasonIncompatibleVersions  = "IncompatibleVersions"
 	reasonWaitingForEtcd        = "WaitingForEtcdQuorum"
 	reasonWaitingForEviction    = "WaitingForEviction"
@@ -218,18 +216,11 @@ func (r *UpgradePlanReconciler) step(ctx context.Context, plan *upgradev1alpha1.
 		return ctrl.Result{RequeueAfter: idleInterval}, nil
 	}
 
-	if newest := highestTalosVersion(plan); plan.Spec.TalosVersion != "" && semver.Compare(newest, plan.Spec.TalosVersion) > 0 {
-		r.setPhase(plan, upgradev1alpha1.PlanPhaseWaiting, reasonTalosDowngrade,
-			fmt.Sprintf("talos target %s is below the %s a node already runs; downgrades are not supported, "+
-				"raise the target", plan.Spec.TalosVersion, newest))
-
-		return ctrl.Result{RequeueAfter: idleInterval}, nil
-	}
-
 	next := nextTalosNode(plan)
 
 	if next == nil && !kubernetesUpgradePending(plan) {
-		r.setPhase(plan, upgradev1alpha1.PlanPhaseIdle, reasonUpToDate, "cluster matches the desired versions")
+		// the targets are a floor: nodes above them are left alone, never downgraded
+		r.setPhase(plan, upgradev1alpha1.PlanPhaseIdle, reasonUpToDate, "every node runs the desired versions or newer")
 
 		return ctrl.Result{RequeueAfter: idleInterval}, nil
 	}

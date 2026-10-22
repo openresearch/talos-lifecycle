@@ -203,17 +203,6 @@ func majorMinor(v string) (major, minor int, ok bool) {
 	return major, minor, err == nil
 }
 
-func highestTalosVersion(plan *upgradev1alpha1.UpgradePlan) string {
-	highest := ""
-	for _, n := range plan.Status.Nodes {
-		if n.CurrentVersion != "" && (highest == "" || semver.Compare(n.CurrentVersion, highest) > 0) {
-			highest = n.CurrentVersion
-		}
-	}
-
-	return highest
-}
-
 func nextVersion(available []string, current string) string {
 	if current == "" {
 		return ""

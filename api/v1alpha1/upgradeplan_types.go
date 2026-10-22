@@ -97,7 +97,8 @@ type UpgradePlanSpec struct {
 	// +optional
 	Channel string `json:"channel,omitempty"`
 
-	// Talos version for every node, e.g. "v1.10.2". Empty leaves Talos alone.
+	// Minimum Talos version for every node, e.g. "v1.10.2". Nodes already above
+	// it are left alone, never downgraded. Empty leaves Talos alone.
 	// +kubebuilder:validation:Pattern=`^v\d+\.\d+\.\d+$`
 	// +optional
 	TalosVersion string `json:"talosVersion,omitempty"`
