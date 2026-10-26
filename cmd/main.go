@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -78,6 +79,7 @@ func main() {
 	var (
 		metricsAddr, probeAddr, controllers string
 		leaderElect, secureMetrics          bool
+		pollInterval                        time.Duration
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",
@@ -88,22 +90,31 @@ func main() {
 	flag.StringVar(&controllers, "controllers", controllerUpgrade,
 		"comma-separated loops to run: "+controllerUpgrade+", "+controllerConfig+", or both; "+
 			"normally one per Deployment")
+	flag.DurationVar(&pollInterval, "version-poll-interval", 24*time.Hour,
+		"how often to check GitHub for new Talos and Kubernetes releases; at least 1h")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	if err := run(metricsAddr, probeAddr, controllers, leaderElect, secureMetrics); err != nil {
+	if err := run(metricsAddr, probeAddr, controllers, leaderElect, secureMetrics, pollInterval); err != nil {
 		setupLog.Error(err, "exiting")
 		os.Exit(1)
 	}
 }
 
-func run(metricsAddr, probeAddr, controllers string, leaderElect, secureMetrics bool) error {
+func run(
+	metricsAddr, probeAddr, controllers string, leaderElect, secureMetrics bool, pollInterval time.Duration,
+) error {
 	enabled, err := parseControllers(controllers)
 	if err != nil {
 		return err
+	}
+
+	// a poll is up to 20 unauthenticated GitHub requests; the limit is 60/h per IP
+	if pollInterval < time.Hour {
+		return fmt.Errorf("--version-poll-interval %s is below the 1h minimum", pollInterval)
 	}
 
 	setupLog.Info("starting", "controllers", controllers)
@@ -130,7 +141,7 @@ func run(metricsAddr, probeAddr, controllers string, leaderElect, secureMetrics 
 	}
 
 	if enabled[controllerUpgrade] {
-		if err := setupUpgrade(mgr); err != nil {
+		if err := setupUpgrade(mgr, pollInterval); err != nil {
 			return err
 		}
 	}
@@ -152,7 +163,7 @@ func run(metricsAddr, probeAddr, controllers string, leaderElect, secureMetrics 
 	return mgr.Start(ctrl.SetupSignalHandler())
 }
 
-func setupUpgrade(mgr manager.Manager) error {
+func setupUpgrade(mgr manager.Manager, pollInterval time.Duration) error {
 	r := &controller.UpgradePlanReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
@@ -163,7 +174,7 @@ func setupUpgrade(mgr manager.Manager) error {
 		return fmt.Errorf("set up UpgradePlan controller: %w", err)
 	}
 
-	if err := mgr.Add(&versions.Poller{Client: mgr.GetClient()}); err != nil {
+	if err := mgr.Add(&versions.Poller{Client: mgr.GetClient(), Interval: pollInterval}); err != nil {
 		return fmt.Errorf("add version poller: %w", err)
 	}
 

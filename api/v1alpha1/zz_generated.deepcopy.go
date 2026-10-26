@@ -417,6 +417,10 @@ func (in *UpgradePlanStatus) DeepCopyInto(out *UpgradePlanStatus) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.VersionsCheckedAt != nil {
+		in, out := &in.VersionsCheckedAt, &out.VersionsCheckedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.Nodes != nil {
 		in, out := &in.Nodes, &out.Nodes
 		*out = make([]NodeStatus, len(*in))

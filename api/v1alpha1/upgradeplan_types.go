@@ -226,6 +226,11 @@ type UpgradePlanStatus struct {
 	// +optional
 	AvailableKubernetesVersions []string `json:"availableKubernetesVersions,omitempty"`
 
+	// Last poll that fetched both release feeds. A restart waits out the rest of
+	// the poll interval from here.
+	// +optional
+	VersionsCheckedAt *metav1.Time `json:"versionsCheckedAt,omitempty"`
+
 	// +optional
 	Nodes []NodeStatus `json:"nodes,omitempty"`
 

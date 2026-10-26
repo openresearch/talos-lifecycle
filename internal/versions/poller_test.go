@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -128,6 +129,18 @@ func TestPublishWaitsForTheClusterVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := p.publish(ctx, talos, true, nil, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Get(ctx, client.ObjectKeyFromObject(plan), plan); err != nil {
+		t.Fatal(err)
+	}
+
+	if plan.Status.VersionsCheckedAt != nil {
+		t.Fatal("a poll with a failed feed set versionsCheckedAt")
+	}
+
 	if err := p.publish(ctx, talos, true, kubernetes, true); err != nil {
 		t.Fatal(err)
 	}
@@ -136,11 +149,68 @@ func TestPublishWaitsForTheClusterVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if plan.Status.VersionsCheckedAt == nil {
+		t.Error("a full poll did not set versionsCheckedAt")
+	}
+
 	if got := fmt.Sprint(plan.Status.AvailableTalosVersions); got != fmt.Sprint(talos[1:]) {
 		t.Errorf("talos = %s, want %v", got, talos[1:])
 	}
 
 	if got := fmt.Sprint(plan.Status.AvailableKubernetesVersions); got != fmt.Sprint(kubernetes[1:]) {
 		t.Errorf("kubernetes = %s, want %v", got, kubernetes[1:])
+	}
+}
+
+func TestUntilDue(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := upgradev1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	checkedAt := func(ago time.Duration) *metav1.Time {
+		ts := metav1.NewTime(time.Now().Add(-ago))
+
+		return &ts
+	}
+
+	cases := []struct {
+		name     string
+		plan     *upgradev1alpha1.UpgradePlan
+		min, max time.Duration
+	}{
+		{name: "no plan", min: 0, max: 0},
+		{name: "never checked", plan: &upgradev1alpha1.UpgradePlan{}, min: 0, max: 0},
+		{
+			name: "checked an hour ago",
+			plan: &upgradev1alpha1.UpgradePlan{Status: upgradev1alpha1.UpgradePlanStatus{
+				VersionsCheckedAt: checkedAt(time.Hour),
+			}},
+			min: 22 * time.Hour, max: 23 * time.Hour,
+		},
+		{
+			name: "overdue",
+			plan: &upgradev1alpha1.UpgradePlan{Status: upgradev1alpha1.UpgradePlanStatus{
+				VersionsCheckedAt: checkedAt(48 * time.Hour),
+			}},
+			min: -25 * time.Hour, max: 0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := fake.NewClientBuilder().WithScheme(scheme)
+
+			if tc.plan != nil {
+				tc.plan.Name = upgradev1alpha1.UpgradePlanName
+				builder = builder.WithObjects(tc.plan).WithStatusSubresource(tc.plan)
+			}
+
+			p := &Poller{Client: builder.Build(), Interval: 24 * time.Hour}
+
+			if got := p.untilDue(context.Background()); got < tc.min || got > tc.max {
+				t.Errorf("untilDue = %s, want between %s and %s", got, tc.min, tc.max)
+			}
+		})
 	}
 }

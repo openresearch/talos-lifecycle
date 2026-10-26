@@ -246,6 +246,12 @@ spec:
               reason:
                 description: Machine-readable cause, e.g. "CoolingDown".
                 type: string
+              versionsCheckedAt:
+                description: |-
+                  Last poll that fetched both release feeds. A restart waits out the rest of
+                  the poll interval from here.
+                format: date-time
+                type: string
             type: object
         type: object
     served: true
