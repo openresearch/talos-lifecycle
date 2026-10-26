@@ -92,7 +92,10 @@ kubectl -n talos-lifecycle-system create secret generic talos-lifecycle-s3 \
 The credential only needs `PutObject` on that prefix.
 
 Upstream versions come from the GitHub releases API by default (60
-unauthenticated requests per hour, one poll a day). Point `TALOS_RELEASE_URL`
+unauthenticated requests per hour). The controller polls every
+`--version-poll-interval` (default `24h`, minimum `1h`) and records the last
+poll in `status.versionsCheckedAt`, so a restart does not poll again before
+the interval is up. Point `TALOS_RELEASE_URL`
 and `KUBERNETES_RELEASE_URL` (chart: `upgrade.releaseFeeds`) at a mirror in the
 same format if needed.
 

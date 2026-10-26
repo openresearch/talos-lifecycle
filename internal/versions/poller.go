@@ -29,7 +29,6 @@ const (
 	defaultTalosReleasesURL      = "https://api.github.com/repos/siderolabs/talos/releases"
 	defaultKubernetesReleasesURL = "https://api.github.com/repos/kubernetes/kubernetes/releases"
 
-	pollInterval          = 24 * time.Hour
 	retryInterval         = 15 * time.Minute
 	baselineRetryInterval = time.Minute
 	fetchTimeout          = time.Minute
@@ -44,7 +43,8 @@ type release struct {
 }
 
 type Poller struct {
-	Client client.Client
+	Client   client.Client
+	Interval time.Duration
 
 	talosURL      string
 	kubernetesURL string
@@ -69,10 +69,20 @@ func (p *Poller) Start(ctx context.Context) error {
 		p.kubernetesURL = url
 	}
 
-	log.Info("starting", "talosURL", p.talosURL, "kubernetesURL", p.kubernetesURL)
+	log.Info("starting", "talosURL", p.talosURL, "kubernetesURL", p.kubernetesURL, "interval", p.Interval)
+
+	if wait := p.untilDue(ctx); wait > 0 {
+		log.Info("versions checked recently", "nextPoll", time.Now().Add(wait))
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(wait):
+		}
+	}
 
 	for {
-		interval := pollInterval
+		interval := p.Interval
 
 		switch err := p.poll(ctx); {
 		case errors.Is(err, errBaselineUnknown):
@@ -94,6 +104,20 @@ func (p *Poller) Start(ctx context.Context) error {
 		case <-time.After(interval):
 		}
 	}
+}
+
+// untilDue is zero when the plan or its last check is missing, so a first start polls at once.
+func (p *Poller) untilDue(ctx context.Context) time.Duration {
+	var plan upgradev1alpha1.UpgradePlan
+	if err := p.Client.Get(ctx, types.NamespacedName{Name: upgradev1alpha1.UpgradePlanName}, &plan); err != nil {
+		return 0
+	}
+
+	if plan.Status.VersionsCheckedAt == nil {
+		return 0
+	}
+
+	return time.Until(plan.Status.VersionsCheckedAt.Add(p.Interval))
 }
 
 func (p *Poller) poll(ctx context.Context) error {
@@ -158,6 +182,11 @@ func (p *Poller) publish(
 
 		if kubernetesOK {
 			plan.Status.AvailableKubernetesVersions = newerThan(kubernetesVersions, kubernetes)
+		}
+
+		if talosOK && kubernetesOK {
+			now := metav1.Now()
+			plan.Status.VersionsCheckedAt = &now
 		}
 
 		return p.Client.Status().Update(ctx, &plan)
