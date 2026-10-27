@@ -80,6 +80,10 @@ const (
 // the UpgradePlan "kubernetes". The controller removes it afterwards.
 const UnfreezeAnnotation = "talos.openresearch.com/unfreeze"
 
+// HoldAnnotation "true" on a Node: neither loop starts on it, and the Kubernetes
+// upgrade waits. Any value but "false" holds.
+const HoldAnnotation = "talos.openresearch.com/hold"
+
 // UpgradeWindow: "HH:MM" in the controller's timezone; Start after End wraps
 // around midnight. A step may finish outside the window.
 type UpgradeWindow struct {
@@ -196,6 +200,9 @@ type NodeStatus struct {
 	// proceeds instead of evicting again.
 	// +optional
 	SelfEvictionRequested bool `json:"selfEvictionRequested,omitempty"`
+	// The Node carries the hold annotation.
+	// +optional
+	Held bool `json:"held,omitempty"`
 	// +optional
 	Message string `json:"message,omitempty"`
 }

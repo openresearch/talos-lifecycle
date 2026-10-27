@@ -166,6 +166,9 @@ type ConfigNodeStatus struct {
 	Message string `json:"message,omitempty"`
 	// +optional
 	LastTransition metav1.Time `json:"lastTransition,omitempty"`
+	// The Node carries the hold annotation.
+	// +optional
+	Held bool `json:"held,omitempty"`
 
 	// Source revision this node last matched.
 	// +optional

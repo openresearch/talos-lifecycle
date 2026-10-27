@@ -201,6 +201,9 @@ spec:
                     currentVersion:
                       description: Talos version the node last reported.
                       type: string
+                    held:
+                      description: The Node carries the hold annotation.
+                      type: boolean
                     lastTransition:
                       format: date-time
                       type: string

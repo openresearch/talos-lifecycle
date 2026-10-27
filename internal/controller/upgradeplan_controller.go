@@ -76,6 +76,7 @@ const (
 	reasonWaitingForConfig      = "WaitingForConfig"
 	reasonUpgradeRefused        = "UpgradeRefused"
 	reasonUpgradeFailed         = "UpgradeFailed"
+	reasonNodeHeld              = "NodeHeld"
 )
 
 type UpgradePlanReconciler struct {
@@ -219,6 +220,12 @@ func (r *UpgradePlanReconciler) step(ctx context.Context, plan *upgradev1alpha1.
 	next := nextTalosNode(plan)
 
 	if next == nil && !kubernetesUpgradePending(plan) {
+		if held := heldNodes(plan, plan.Spec.TalosVersion); plan.Spec.TalosVersion != "" && len(held) > 0 {
+			r.setPhase(plan, upgradev1alpha1.PlanPhaseWaiting, reasonNodeHeld, heldMessage(held))
+
+			return ctrl.Result{RequeueAfter: idleInterval}, nil
+		}
+
 		// the targets are a floor: nodes above them are left alone, never downgraded
 		r.setPhase(plan, upgradev1alpha1.PlanPhaseIdle, reasonUpToDate, "every node runs the desired versions or newer")
 
@@ -299,6 +306,13 @@ func (r *UpgradePlanReconciler) startNext(
 		return r.startNodeUpgrade(ctx, plan, next)
 	}
 
+	// UpgradeKubelet covers every node, held ones too
+	if held := heldNodes(plan, ""); len(held) > 0 {
+		r.setPhase(plan, upgradev1alpha1.PlanPhaseWaiting, reasonNodeHeld, heldMessage(held))
+
+		return ctrl.Result{RequeueAfter: clusterCheckInterval}, nil
+	}
+
 	// k8s.Upgrade would refuse the path only after the plan shows Upgrading
 	if from, to := plan.Status.Kubernetes.CurrentVersion, plan.Spec.KubernetesVersion; !kubernetesPathSupported(from, to) {
 		r.setPhase(plan, upgradev1alpha1.PlanPhaseWaiting, reasonUnsupportedKubernetes, unsupportedKubernetesPath(from, to))
@@ -360,6 +374,7 @@ func (r *UpgradePlanReconciler) observeNodes(ctx context.Context, plan *upgradev
 	for _, k8sNode := range live {
 		status := previous[k8sNode.Name]
 		status.Name, status.Role, status.Address = k8sNode.Name, k8sNode.Role, k8sNode.Address
+		status.Held = k8sNode.Held
 
 		if !inFlight && status.Address != "" {
 			version, err := r.nodes().Version(ctx, status.Address)
@@ -561,7 +576,7 @@ func nextTalosNode(plan *upgradev1alpha1.UpgradePlan) *upgradev1alpha1.NodeStatu
 
 	for i := range plan.Status.Nodes {
 		n := &plan.Status.Nodes[i]
-		if n.Phase != upgradev1alpha1.NodePhasePending || n.CurrentVersion == "" {
+		if n.Phase != upgradev1alpha1.NodePhasePending || n.CurrentVersion == "" || n.Held {
 			continue
 		}
 
@@ -575,6 +590,23 @@ func nextTalosNode(plan *upgradev1alpha1.UpgradePlan) *upgradev1alpha1.NodeStatu
 	}
 
 	return next
+}
+
+// heldNodes names the held nodes, only those below the version if one is given.
+func heldNodes(plan *upgradev1alpha1.UpgradePlan, below string) []string {
+	var names []string
+
+	for _, n := range plan.Status.Nodes {
+		if n.Held && (below == "" || semver.Compare(n.CurrentVersion, below) < 0) {
+			names = append(names, n.Name)
+		}
+	}
+
+	return names
+}
+
+func heldMessage(names []string) string {
+	return fmt.Sprintf("node(s) %v held by the %s annotation", names, upgradev1alpha1.HoldAnnotation)
 }
 
 func nodeBefore(a, b *upgradev1alpha1.NodeStatus) bool {

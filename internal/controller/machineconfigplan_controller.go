@@ -223,6 +223,8 @@ func (r *MachineConfigPlanReconciler) reconcilePlan(ctx context.Context, plan *u
 
 	next := nextConfigNode(plan, r.NodeName)
 	if next == nil {
+		setPlan(plan, upgradev1alpha1.ConfigPlanWaiting, reasonConfigNodeHeld, heldMessage(heldConfigNodes(plan)))
+
 		return idle, nil
 	}
 
@@ -254,7 +256,7 @@ func (r *MachineConfigPlanReconciler) observeNodes(ctx context.Context, plan *up
 
 		delete(previous, n.Name)
 
-		status.Address, status.Role = n.Address, n.Role
+		status.Address, status.Role, status.Held = n.Address, n.Role, n.Held
 		observed = append(observed, status)
 	}
 

@@ -54,6 +54,7 @@ const (
 	reasonConfigInvalid           = "InvalidConfig"
 	reasonConfigNodeFailed        = "NodeFailed"
 	reasonConfigUnfrozen          = "Unfrozen"
+	reasonConfigNodeHeld          = "NodeHeld"
 )
 
 const msgReadFailed = "could not read the node's config: "
@@ -166,12 +167,24 @@ func nextConfigNode(p *upgradev1alpha1.MachineConfigPlan, ownNode string) *upgra
 
 	for i := range p.Status.Nodes {
 		n := &p.Status.Nodes[i]
-		if n.Phase == upgradev1alpha1.ConfigNodePending && (best == nil || rank(n) < rank(best)) {
+		if n.Phase == upgradev1alpha1.ConfigNodePending && !n.Held && (best == nil || rank(n) < rank(best)) {
 			best = n
 		}
 	}
 
 	return best
+}
+
+func heldConfigNodes(p *upgradev1alpha1.MachineConfigPlan) []string {
+	var names []string
+
+	for _, n := range p.Status.Nodes {
+		if n.Phase == upgradev1alpha1.ConfigNodePending && n.Held {
+			names = append(names, n.Name)
+		}
+	}
+
+	return names
 }
 
 func configCooldownRemaining(p *upgradev1alpha1.MachineConfigPlan, now time.Time) time.Duration {

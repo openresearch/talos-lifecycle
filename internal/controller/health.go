@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	clusterapi "github.com/siderolabs/talos/pkg/machinery/api/cluster"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +18,19 @@ import (
 
 type clusterNode struct {
 	Name, Address, Role, Kubelet string
+	Held                         bool
+}
+
+// a mistyped value holds: leaving a node alone is the safe mistake
+func holdRequested(annotations map[string]string) bool {
+	v, ok := annotations[upgradev1alpha1.HoldAnnotation]
+	if !ok {
+		return false
+	}
+
+	held, err := strconv.ParseBool(v)
+
+	return err != nil || held
 }
 
 func clusterNodes(ctx context.Context, c client.Reader) ([]clusterNode, error) {
@@ -30,7 +44,12 @@ func clusterNodes(ctx context.Context, c client.Reader) ([]clusterNode, error) {
 	for i := range list.Items {
 		n := &list.Items[i]
 
-		node := clusterNode{Name: n.Name, Role: upgradev1alpha1.RoleWorker, Kubelet: n.Status.NodeInfo.KubeletVersion}
+		node := clusterNode{
+			Name:    n.Name,
+			Role:    upgradev1alpha1.RoleWorker,
+			Kubelet: n.Status.NodeInfo.KubeletVersion,
+			Held:    holdRequested(n.Annotations),
+		}
 		if _, ok := n.Labels["node-role.kubernetes.io/control-plane"]; ok {
 			node.Role = upgradev1alpha1.RoleControlPlane
 		}
