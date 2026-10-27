@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	factoryInstallerBase = "factory.talos.dev/installer"
+	factoryRegistry = "factory.talos.dev"
 
 	// Image Factory schematic without extensions: the stock Talos installer
 	vanillaSchematic = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
@@ -24,9 +24,30 @@ const (
 	schematicExtensionName = "schematic"
 )
 
+type NodeImage struct {
+	Schematic  string // empty: not an Image Factory image
+	Platform   string
+	SecureBoot bool
+}
+
+// untagged: factory.talos.dev/<platform>-installer[-secureboot]/<schematic>
+func (n NodeImage) FactoryBase() string {
+	repo := n.Platform + "-installer"
+	if n.SecureBoot {
+		repo += "-secureboot"
+	}
+
+	schematic := n.Schematic
+	if schematic == "" {
+		schematic = vanillaSchematic
+	}
+
+	return fmt.Sprintf("%s/%s/%s", factoryRegistry, repo, schematic)
+}
+
 // resolveInstallerImage uses, in order: spec.installerImageBase, the node's own
 // Image Factory schematic (so it keeps its extensions), INSTALLER_IMAGE_BASE,
-// the stock installer.
+// the stock installer. The platform and Secure Boot always come from the node.
 func (r *UpgradePlanReconciler) resolveInstallerImage(
 	ctx context.Context,
 	plan *upgradev1alpha1.UpgradePlan,
@@ -38,53 +59,72 @@ func (r *UpgradePlanReconciler) resolveInstallerImage(
 		return fmt.Sprintf("%s:%s", base, plan.Spec.TalosVersion), nil
 	}
 
-	schematicID, err := nodeSchematicID(ctx, node.Address)
+	nodeImage, err := ReadNodeImage(ctx, node.Address)
 	if err != nil {
 		return "", fmt.Errorf(
-			"read schematic from node %s: %w (set spec.installerImageBase to override)",
+			"read image from node %s: %w (set spec.installerImageBase to override)",
 			node.Name, err)
 	}
 
-	if schematicID != "" {
-		image := fmt.Sprintf("%s/%s:%s", factoryInstallerBase, schematicID, plan.Spec.TalosVersion)
-		log.V(1).Info("resolved installer image from node schematic",
-			"node", node.Name, "schematic", schematicID)
+	if nodeImage.Schematic != "" {
+		image := fmt.Sprintf("%s:%s", nodeImage.FactoryBase(), plan.Spec.TalosVersion)
+		log.V(1).Info("resolved installer image from node",
+			"node", node.Name, "schematic", nodeImage.Schematic,
+			"platform", nodeImage.Platform, "secureBoot", nodeImage.SecureBoot)
 
 		return image, nil
 	}
 
-	image := fmt.Sprintf("%s:%s", defaultInstallerImageBase(), plan.Spec.TalosVersion)
+	base := os.Getenv("INSTALLER_IMAGE_BASE")
+	if base == "" {
+		base = nodeImage.FactoryBase()
+	}
+
+	image := fmt.Sprintf("%s:%s", base, plan.Spec.TalosVersion)
 	r.event(plan, corev1.EventTypeNormal, "InstallerImageDefault",
 		fmt.Sprintf("node %s has no Image Factory schematic; using %s", node.Name, image))
 
 	return image, nil
 }
 
-func nodeSchematicID(ctx context.Context, address string) (string, error) {
+// the installer bakes in talos.platform, so an unknown platform is an error, not metal
+func ReadNodeImage(ctx context.Context, address string) (NodeImage, error) {
 	c, talosCtx, err := talosutil.Client(ctx, address)
 	if err != nil {
-		return "", err
+		return NodeImage{}, err
 	}
 	defer c.Close() //nolint:errcheck
 
+	var image NodeImage
+
 	extensions, err := safe.StateListAll[*talosruntime.ExtensionStatus](talosCtx, c.COSI)
 	if err != nil {
-		return "", fmt.Errorf("list extension statuses: %w", err)
+		return NodeImage{}, fmt.Errorf("list extension statuses: %w", err)
 	}
 
 	for ext := range extensions.All() {
 		if ext.TypedSpec().Metadata.Name == schematicExtensionName {
-			return ext.TypedSpec().Metadata.Version, nil
+			image.Schematic = ext.TypedSpec().Metadata.Version
+
+			break
 		}
 	}
 
-	return "", nil
-}
-
-func defaultInstallerImageBase() string {
-	if base := os.Getenv("INSTALLER_IMAGE_BASE"); base != "" {
-		return base
+	platform, err := safe.StateGetByID[*talosruntime.PlatformMetadata](talosCtx, c.COSI, talosruntime.PlatformMetadataID)
+	if err != nil {
+		return NodeImage{}, fmt.Errorf("get platform metadata: %w", err)
 	}
 
-	return factoryInstallerBase + "/" + vanillaSchematic
+	if image.Platform = platform.TypedSpec().Platform; image.Platform == "" {
+		return NodeImage{}, fmt.Errorf("platform metadata has no platform")
+	}
+
+	security, err := safe.StateGetByID[*talosruntime.SecurityState](talosCtx, c.COSI, talosruntime.SecurityStateID)
+	if err != nil {
+		return NodeImage{}, fmt.Errorf("get security state: %w", err)
+	}
+
+	image.SecureBoot = security.TypedSpec().SecureBoot
+
+	return image, nil
 }

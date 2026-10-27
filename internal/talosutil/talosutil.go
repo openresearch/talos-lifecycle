@@ -13,6 +13,9 @@ import (
 
 var talosconfig = "/var/run/secrets/talos.dev/config"
 
+// for hack/ tools run outside the cluster
+func SetConfigPath(path string) { talosconfig = path }
+
 // use the returned context: it selects the node
 func Client(ctx context.Context, address string) (*client.Client, context.Context, error) {
 	cfg, err := config.Open(talosconfig)

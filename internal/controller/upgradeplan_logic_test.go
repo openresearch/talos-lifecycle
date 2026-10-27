@@ -323,6 +323,24 @@ func TestResolveInstallerImageOverride(t *testing.T) {
 	}
 }
 
+func TestNodeImageFactoryBase(t *testing.T) {
+	cases := []struct {
+		node NodeImage
+		want string
+	}{
+		{NodeImage{Schematic: "abc", Platform: "nocloud"}, "factory.talos.dev/nocloud-installer/abc"},
+		{NodeImage{Schematic: "abc", Platform: "hcloud"}, "factory.talos.dev/hcloud-installer/abc"},
+		{NodeImage{Schematic: "abc", Platform: "metal", SecureBoot: true}, "factory.talos.dev/metal-installer-secureboot/abc"},
+		{NodeImage{Platform: "metal"}, "factory.talos.dev/metal-installer/" + vanillaSchematic},
+	}
+
+	for _, c := range cases {
+		if got := c.node.FactoryBase(); got != c.want {
+			t.Errorf("%+v: FactoryBase() = %q, want %q", c.node, got, c.want)
+		}
+	}
+}
+
 func TestInFlightNode(t *testing.T) {
 	plan := &upgradev1alpha1.UpgradePlan{
 		Status: upgradev1alpha1.UpgradePlanStatus{
