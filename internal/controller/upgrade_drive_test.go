@@ -489,3 +489,82 @@ func TestInterruptedUpgradeCallKeepsUpgrading(t *testing.T) {
 		t.Errorf("stored phase = %s (%s), want Upgrading: the call may have reached the node", got, stored.Status.Nodes[0].Message)
 	}
 }
+
+func heldWorker(hold string) *corev1.Node {
+	n := readyNode(testWorkerName)
+	n.Annotations = map[string]string{upgradev1alpha1.HoldAnnotation: hold}
+	n.Status.Addresses = []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.10"}}
+	n.Status.NodeInfo.KubeletVersion = "v1.34.2"
+
+	return n
+}
+
+func reconcileAndGet(t *testing.T, r *UpgradePlanReconciler) *upgradev1alpha1.UpgradePlan {
+	t.Helper()
+
+	if _, err := r.Reconcile(context.Background(), clusterRequest()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	var stored upgradev1alpha1.UpgradePlan
+	if err := r.Get(context.Background(), clusterRequest().NamespacedName, &stored); err != nil {
+		t.Fatal(err)
+	}
+
+	return &stored
+}
+
+func TestHoldAnnotationStopsAndReleasesTheTalosUpgrade(t *testing.T) {
+	ctx := context.Background()
+
+	plan := &upgradev1alpha1.UpgradePlan{
+		ObjectMeta: metav1.ObjectMeta{Name: upgradev1alpha1.UpgradePlanName},
+		Spec:       upgradev1alpha1.UpgradePlanSpec{TalosVersion: talos1142, InstallerImageBase: "example.com/installer"},
+	}
+	node := heldWorker("true")
+	c := fake.NewClientBuilder().WithScheme(upgradeScheme(t)).WithObjects(plan, node).
+		WithStatusSubresource(&upgradev1alpha1.UpgradePlan{}).Build()
+	talos := &fakeTalos{version: "v1.14.0", healthy: true}
+	r := &UpgradePlanReconciler{Client: c, talos: talos}
+
+	stored := reconcileAndGet(t, r)
+	if stored.Status.Phase != upgradev1alpha1.PlanPhaseWaiting || stored.Status.Reason != reasonNodeHeld {
+		t.Fatalf("plan = %s/%s (%s), want Waiting/%s", stored.Status.Phase, stored.Status.Reason, stored.Status.Message, reasonNodeHeld)
+	}
+
+	if !stored.Status.Nodes[0].Held || len(talos.upgrades) != 0 {
+		t.Fatalf("held = %t, upgrade calls = %d, want true and 0", stored.Status.Nodes[0].Held, len(talos.upgrades))
+	}
+
+	node.Annotations[upgradev1alpha1.HoldAnnotation] = "false"
+	if err := c.Update(ctx, node); err != nil {
+		t.Fatal(err)
+	}
+
+	stored = reconcileAndGet(t, r)
+	if len(talos.upgrades) != 1 || stored.Status.Nodes[0].Phase != upgradev1alpha1.NodePhaseUpgrading {
+		t.Errorf("upgrade calls = %d, node %s (%s), want 1 and Upgrading once released",
+			len(talos.upgrades), stored.Status.Nodes[0].Phase, stored.Status.Nodes[0].Message)
+	}
+
+	if stored.Status.Nodes[0].Held {
+		t.Error("held = true after the annotation was set to false")
+	}
+}
+
+func TestHoldAnnotationStopsTheKubernetesUpgrade(t *testing.T) {
+	plan := &upgradev1alpha1.UpgradePlan{
+		ObjectMeta: metav1.ObjectMeta{Name: upgradev1alpha1.UpgradePlanName},
+		Spec:       upgradev1alpha1.UpgradePlanSpec{KubernetesVersion: k8s1359},
+	}
+	c := fake.NewClientBuilder().WithScheme(upgradeScheme(t)).WithObjects(plan, heldWorker("true")).
+		WithStatusSubresource(&upgradev1alpha1.UpgradePlan{}).Build()
+	talos := &fakeTalos{version: talos1142, controlPlane: "v1.34.2", healthy: true}
+	r := &UpgradePlanReconciler{Client: c, talos: talos}
+
+	stored := reconcileAndGet(t, r)
+	if stored.Status.Reason != reasonNodeHeld || len(talos.rollouts) != 0 {
+		t.Errorf("plan = %s/%s (%s), rollouts = %d, want Waiting/%s and none",
+			stored.Status.Phase, stored.Status.Reason, stored.Status.Message, len(talos.rollouts), reasonNodeHeld)
+	}
+}

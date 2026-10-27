@@ -169,6 +169,33 @@ func TestNextConfigNodeOrdersWorkersFirst(t *testing.T) {
 	}
 }
 
+func TestNextConfigNodeSkipsHeld(t *testing.T) {
+	t.Parallel()
+
+	plan := &upgradev1alpha1.MachineConfigPlan{
+		Status: upgradev1alpha1.MachineConfigPlanStatus{
+			Nodes: []upgradev1alpha1.ConfigNodeStatus{
+				{Name: testWorkerName, Role: upgradev1alpha1.RoleWorker, Phase: upgradev1alpha1.ConfigNodePending, Held: true},
+				{Name: "worker-3", Role: upgradev1alpha1.RoleWorker, Phase: upgradev1alpha1.ConfigNodePending},
+			},
+		},
+	}
+
+	if got := nextConfigNode(plan, ""); got == nil || got.Name != "worker-3" {
+		t.Fatalf("got %+v, want worker-3 past the held worker-0", got)
+	}
+
+	plan.Status.Nodes[1].Phase = upgradev1alpha1.ConfigNodeSucceeded
+
+	if got := nextConfigNode(plan, ""); got != nil {
+		t.Fatalf("got %+v, want nil: only a held node is pending", got)
+	}
+
+	if got := heldConfigNodes(plan); len(got) != 1 || got[0] != testWorkerName {
+		t.Errorf("heldConfigNodes = %v, want [worker-0]", got)
+	}
+}
+
 func TestNextConfigNodeLeavesOwnNodeLast(t *testing.T) {
 	t.Parallel()
 

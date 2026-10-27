@@ -394,6 +394,55 @@ func TestMinorGap(t *testing.T) {
 	}
 }
 
+func TestNextTalosNodeSkipsHeld(t *testing.T) {
+	plan := &upgradev1alpha1.UpgradePlan{
+		Spec: upgradev1alpha1.UpgradePlanSpec{TalosVersion: "v1.13.12"},
+		Status: upgradev1alpha1.UpgradePlanStatus{Nodes: []upgradev1alpha1.NodeStatus{
+			{Name: "held", CurrentVersion: "v1.13.0", Phase: upgradev1alpha1.NodePhasePending, Held: true},
+			{Name: "held-done", CurrentVersion: "v1.13.12", Phase: upgradev1alpha1.NodePhaseSucceeded, Held: true},
+			{Name: testWorkerName, CurrentVersion: "v1.13.5", Phase: upgradev1alpha1.NodePhasePending},
+		}},
+	}
+
+	if next := nextTalosNode(plan); next == nil || next.Name != testWorkerName {
+		t.Fatalf("nextTalosNode = %v, want worker-0 past the held node on an older version", next)
+	}
+
+	if got := heldNodes(plan, plan.Spec.TalosVersion); len(got) != 1 || got[0] != "held" {
+		t.Errorf("heldNodes below the target = %v, want [held]", got)
+	}
+
+	if got := heldNodes(plan, ""); len(got) != 2 {
+		t.Errorf("heldNodes = %v, want both held nodes", got)
+	}
+
+	plan.Status.Nodes[2].Phase = upgradev1alpha1.NodePhaseSucceeded
+	plan.Status.Nodes[2].CurrentVersion = "v1.13.12"
+
+	if next := nextTalosNode(plan); next != nil {
+		t.Errorf("nextTalosNode = %s, want nil once only a held node is behind", next.Name)
+	}
+}
+
+func TestHoldRequested(t *testing.T) {
+	cases := []struct {
+		annotations map[string]string
+		want        bool
+	}{
+		{nil, false},
+		{map[string]string{upgradev1alpha1.HoldAnnotation: "false"}, false},
+		{map[string]string{upgradev1alpha1.HoldAnnotation: "true"}, true},
+		{map[string]string{upgradev1alpha1.HoldAnnotation: "ture"}, true},
+		{map[string]string{upgradev1alpha1.HoldAnnotation: ""}, true},
+	}
+
+	for _, c := range cases {
+		if got := holdRequested(c.annotations); got != c.want {
+			t.Errorf("holdRequested(%v) = %t, want %t", c.annotations, got, c.want)
+		}
+	}
+}
+
 func TestNextTalosNodeSkipsNodesAboveTarget(t *testing.T) {
 	plan := &upgradev1alpha1.UpgradePlan{
 		Spec: upgradev1alpha1.UpgradePlanSpec{TalosVersion: "v1.13.12"},

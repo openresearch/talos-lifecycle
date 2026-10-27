@@ -24,6 +24,10 @@ var (
 		Name: "talos_lifecycle_nodes",
 		Help: "Number of cluster nodes per upgrade phase.",
 	}, []string{"phase"})
+	metricNodesHeld = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "talos_lifecycle_nodes_held",
+		Help: "Number of nodes with the hold annotation.",
+	})
 
 	metricUpgradesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "talos_lifecycle_upgrades_total",
@@ -60,6 +64,7 @@ func registerUpgradeMetrics() {
 			metricPlanFrozen,
 			metricPlanBlocked,
 			metricNodes,
+			metricNodesHeld,
 			metricUpgradesTotal,
 			metricUpgradeDuration,
 			metricRollbacks,
@@ -96,4 +101,6 @@ func updateNodeMetrics(plan *upgradev1alpha1.UpgradePlan) {
 	for _, phase := range knownPhases {
 		metricNodes.WithLabelValues(string(phase)).Set(float64(counts[phase]))
 	}
+
+	metricNodesHeld.Set(float64(len(heldNodes(plan, ""))))
 }
