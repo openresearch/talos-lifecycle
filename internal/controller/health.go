@@ -69,6 +69,19 @@ func clusterNodes(ctx context.Context, c client.Reader) ([]clusterNode, error) {
 }
 
 func ClusterHealth(ctx context.Context, c client.Reader) (healthy bool, reason string, err error) {
+	return clusterHealth(ctx, c, talosHealth)
+}
+
+func clusterHealth(
+	ctx context.Context,
+	c client.Reader,
+	talos func(ctx context.Context, controlPlane, workers []string) (bool, string, error),
+) (healthy bool, reason string, err error) {
+	// Talos skips its node Ready check when cluster.network.cni is none
+	if gate, err := nodesReady(ctx, c); err != nil || !gate.passed() {
+		return false, gate.reason, err
+	}
+
 	nodes, err := clusterNodes(ctx, c)
 	if err != nil {
 		return false, "", err
@@ -86,7 +99,7 @@ func ClusterHealth(ctx context.Context, c client.Reader) (healthy bool, reason s
 		}
 	}
 
-	return talosHealth(ctx, controlPlane, workers)
+	return talos(ctx, controlPlane, workers)
 }
 
 func talosHealth(ctx context.Context, controlPlane, workers []string) (healthy bool, reason string, err error) {

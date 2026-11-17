@@ -39,9 +39,9 @@ func (r *UpgradePlanReconciler) controlPlaneReady(
 	return r.etcdQuorumReady(ctx, plan)
 }
 
-func (r *UpgradePlanReconciler) nodesReady(ctx context.Context) (gateResult, error) {
+func nodesReady(ctx context.Context, c client.Reader) (gateResult, error) {
 	var nodes corev1.NodeList
-	if err := r.List(ctx, &nodes); err != nil {
+	if err := c.List(ctx, &nodes); err != nil {
 		return gateResult{}, fmt.Errorf("list nodes: %w", err)
 	}
 
