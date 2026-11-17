@@ -275,7 +275,7 @@ func (r *UpgradePlanReconciler) startNext(
 		return ctrl.Result{RequeueAfter: clusterCheckInterval}, nil
 	}
 
-	if gate, err := r.nodesReady(ctx); err != nil {
+	if gate, err := nodesReady(ctx, r.Client); err != nil {
 		return ctrl.Result{}, err
 	} else if !gate.passed() {
 		r.setPhase(plan, upgradev1alpha1.PlanPhaseWaiting, reasonWaitingForCluster, gate.reason)
